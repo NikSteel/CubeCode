@@ -3,7 +3,7 @@
 #include "neopixel/neopixel.h"
 #include "MPU6050/MPU6050.h"
 
-SYSTEM_MODE(AUTOMATIC);
+SYSTEM_MODE(SEMI_AUTOMATIC);
 
 // Neopixel
 #define PIXEL_PIN D2
@@ -23,10 +23,12 @@ void toggleLed();
 
 //OSC
 UDP udp;
-IPAddress outIp(192, 168, 0, 107);//your computer IP
+IPAddress outIp(255, 255, 255, 255);//your computer IP
 unsigned int outPort = 9000; //computer incoming port
 
 void setup() {
+    WiFi.connect();
+    
     //Neopixe;
     strip.begin();
     strip.show(); // Initialize all pixels to 'off'
@@ -35,7 +37,7 @@ void setup() {
     pinMode(ledPin, OUTPUT);
     Wire.begin();
     accelgyro.initialize();
-    Particle.publish("MPU6050 connection", (accelgyro.testConnection() ? "successful" : "failed"), 60, PRIVATE);
+    //Particle.publish("MPU6050 connection", (accelgyro.testConnection() ? "successful" : "failed"), 60, PRIVATE);
     
     //osc
     udp.begin(8888);
@@ -106,5 +108,11 @@ uint32_t Wheel(byte WheelPos) {
   } else {
    WheelPos -= 170;
    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+}
+
+void connect() {
+  if (Particle.connected() == false) {
+    Particle.connect();
   }
 }
