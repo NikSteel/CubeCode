@@ -1,81 +1,162 @@
-#include "simple-OSC/simple-OSC.h"
-#include "application.h"
 #include "neopixel/neopixel.h"
-#include "MPU6050/MPU6050.h"
+#include "simple-OSC/simple-OSC.h"
+#include "MPU6050_MOTION_APPS.h"
 
-SYSTEM_MODE(SEMI_AUTOMATIC);
-
-// Neopixel
-#define PIXEL_PIN D2
-#define PIXEL_COUNT 40
-#define PIXEL_TYPE WS2812B
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
-void rainbow(uint8_t wait);
-uint32_t Wheel(byte WheelPos);
-
-// MPU
-MPU6050 accelgyro;
-int16_t ax, ay, az;
-int16_t gx, gy, gz;
-void sendSixAxis(uint8_t wait);
-int ledPin = D7;
-void toggleLed();
+//General
+#define LED_PIN D7
+//SYSTEM_MODE(SEMI_AUTOMATIC);
 
 //OSC
 UDP udp;
-IPAddress outIp(255, 255, 255, 255);//your computer IP
-unsigned int outPort = 9000; //computer incoming port
+IPAddress outIp(255, 255, 255, 255);
+unsigned int outPort = 9000;
+unsigned int inPort = 8888;
+
+//Neopixel
+#define PIXEL_PIN D3
+#define PIXEL_COUNT 40
+#define PIXEL_TYPE WS2812B
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
+
+//MPU6050
+MPU6050 mpu;
+bool dmpReady = false;  // set true if DMP init was successful
+uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
+uint8_t fifoBuffer[64]; // FIFO storage buffer
+Quaternion q;           // [w, x, y, z]         quaternion container
+VectorInt16 aa;         // [x, y, z]            accel sensor measurements
+VectorInt16 aaReal;     // [x, y, z]            gravity-free accel sensor measurements
+VectorInt16 aaWorld;    // [x, y, z]            world-frame accel sensor measurements
+VectorFloat gravity;    // [x, y, z]            gravity vector
+float euler[3];         // [psi, theta, phi]    Euler angle container
+float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
+
 
 void setup() {
-    WiFi.connect();
+    //General
+    pinMode(LED_PIN,OUTPUT);
+    Serial.begin(9600);
+    //WiFi.connect();
     
-    //Neopixe;
+    //OSC
+    udp.begin(inPort);    
+
+    //Neopixel
     strip.begin();
     strip.show(); // Initialize all pixels to 'off'
     
     //MPU6050
-    pinMode(ledPin, OUTPUT);
-    Wire.begin();
-    accelgyro.initialize();
-    //Particle.publish("MPU6050 connection", (accelgyro.testConnection() ? "successful" : "failed"), 60, PRIVATE);
-    
-    //osc
-    udp.begin(8888);
+    delay(1000);
+	Wire.begin();
+    setupAccelGyro();
 }
 
 void loop() {
-    sendSixAxis(20);
+    processAccelGyro(20);
+    sendOscData(100);
     rainbow(20);
 }
 
+void setupAccelGyro(){
+    mpu.reset();
+    mpu.initialize();
+    Serial.println(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
+    
+    uint8_t devStatus = mpu.dmpInitialize();
 
-void sendSixAxis(uint8_t wait){
+    // make sure it worked (returns 0 if so)
+    if (devStatus == 0) {
+        // supply your own gyro offsets here, scaled for min sensitivity
+        mpu.setXGyroOffset(220);
+        mpu.setYGyroOffset(76);
+        mpu.setZGyroOffset(-85);
+        mpu.setZAccelOffset(1788);
+        
+        mpu.setDMPEnabled(true);
+        packetSize = mpu.dmpGetFIFOPacketSize();
+        dmpReady = true;
+    
+    } else {
+        Serial.println((devStatus == 1) ? "DMP Initial memory load failed." : "DMP Configuration updates failed.");
+    }
+}
+
+
+void sendOscData(uint8_t wait){
     static unsigned long previousTime = 0;
+    static bool ledState = false;
     unsigned long currentTime = millis();
     
     if ((currentTime - previousTime) > wait){
       previousTime = currentTime;
-      // read raw accel/gyro measurements from device
-      accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
 
       //SEND
-      OSCMessage outMessage("/BattleCat");
-      outMessage.addFloat(ax);
-      outMessage.addFloat(ay);
-      outMessage.addFloat(az);
-      outMessage.addFloat(gx);
-      outMessage.addFloat(gy);
-      outMessage.addFloat(gz);
+      OSCMessage outMessage("/SensorData");
+      outMessage.addFloat(aaReal.x);
+      outMessage.addFloat(aaReal.y);
+      outMessage.addFloat(aaReal.z);
+      outMessage.addFloat(ypr[0]);
+      outMessage.addFloat(ypr[1]);
+      outMessage.addFloat(ypr[2]);
       outMessage.send(udp,outIp,outPort);
-    
+      
       toggleLed();
     }
+}
+
+
+void sendSerialData(uint8_t wait){
+    static unsigned long previousTime = 0;
+    unsigned long currentTime = millis();
+    
+    if ((currentTime - previousTime) > wait){
+        Serial.print(aaReal.x);
+        Serial.print("\t");
+        Serial.print(aaReal.y);
+        Serial.print("\t");
+        Serial.print(aaReal.z);
+        Serial.print("\t");
+        Serial.print(ypr[0]);
+        Serial.print("\t");
+        Serial.print(ypr[1]);
+        Serial.print("\t");
+        Serial.println(ypr[2]);
+    }
+}
+
+void processAccelGyro(uint8_t wait){
+    static uint16_t fifoCount = 0;
+    static unsigned long previousTime = 0;
+    unsigned long currentTime = millis();
+    
+    if ((currentTime - previousTime) > wait){
+        previousTime = currentTime;
+        fifoCount = mpu.getFIFOCount();
+        if ((fifoCount >= packetSize) && dmpReady){
+            mpu.getFIFOBytes(fifoBuffer, packetSize);
+            mpu.dmpGetQuaternion(&q, fifoBuffer);
+            mpu.dmpGetAccel(&aa, fifoBuffer);
+            mpu.dmpGetEuler(euler, &q);
+            mpu.dmpGetGravity(&gravity, &q);
+            mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
+            mpu.dmpGetLinearAccelInWorld(&aaWorld, &aaReal, &q);
+            mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+            radianToDegrees(euler);
+            radianToDegrees(ypr);   
+        }
+    }
+}
+
+void radianToDegrees(float rad[3]){
+    rad[0] = rad[0] * 180/M_PI;
+    rad[1] = rad[1] * 180/M_PI;
+    rad[2] = rad[2] * 180/M_PI;
 }
 
 void toggleLed() {
     static bool ledState = false;
     ledState = !ledState;
-    digitalWrite(ledPin, ledState);
+    digitalWrite(LED_PIN, ledState);
 }
 
 void rainbow(uint8_t wait) {
@@ -108,11 +189,5 @@ uint32_t Wheel(byte WheelPos) {
   } else {
    WheelPos -= 170;
    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
-}
-
-void connect() {
-  if (Particle.connected() == false) {
-    Particle.connect();
   }
 }
