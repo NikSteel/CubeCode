@@ -1,3 +1,4 @@
+#include "CAP1188.h"
 #include "neopixel/neopixel.h"
 #include "simple-OSC/simple-OSC.h"
 #include "MPU6050_MOTION_APPS.h"
@@ -13,7 +14,7 @@ unsigned int outPort = 9000;
 unsigned int inPort = 8888;
 
 //Neopixel
-#define PIXEL_PIN D3
+#define PIXEL_PIN D2
 #define PIXEL_COUNT 40
 #define PIXEL_TYPE WS2812B
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
@@ -32,6 +33,10 @@ float euler[3];         // [psi, theta, phi]    Euler angle container
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
 
+//CAP1188
+Adafruit_CAP1188 cap = Adafruit_CAP1188();
+bool touched[8];
+
 void setup() {
     //General
     pinMode(LED_PIN,OUTPUT);
@@ -49,11 +54,17 @@ void setup() {
     delay(1000);
 	Wire.begin();
     setupAccelGyro();
+    
+    //delay(1000);
+    cap.begin();
+    //sensitivity values from 1 to 7
+    cap.setSensitivity(7);
 }
 
 void loop() {
     processAccelGyro(20);
-    sendOscData(100);
+    processTouched(20);
+    sendOscData(50);
     rainbow(20);
 }
 
@@ -98,6 +109,9 @@ void sendOscData(uint8_t wait){
       outMessage.addFloat(ypr[0]);
       outMessage.addFloat(ypr[1]);
       outMessage.addFloat(ypr[2]);
+      for (uint8_t i=0; i<8; i++) {
+        outMessage.addInt(touched[i]);
+      }
       outMessage.send(udp,outIp,outPort);
       
       toggleLed();
@@ -190,4 +204,17 @@ uint32_t Wheel(byte WheelPos) {
    WheelPos -= 170;
    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
+}
+
+void processTouched(uint8_t wait){
+    static unsigned long previousTime = 0;
+    unsigned long currentTime = millis();
+    
+    if ((currentTime - previousTime) > wait){
+        previousTime = currentTime;
+        uint8_t raw = cap.touched();
+        for (uint8_t i=0; i<8; i++) {
+            touched[i] = (raw & (1 << i)) ? true : false;
+        }
+    }
 }
