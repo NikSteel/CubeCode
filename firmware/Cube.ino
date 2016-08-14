@@ -10,8 +10,10 @@
 //OSC
 UDP udp;
 IPAddress outIp(255, 255, 255, 255);
-unsigned int outPort = 9000;
-unsigned int inPort = 8888;
+char macString[18];
+byte mac[6];
+unsigned int outPort;
+unsigned int inPort;
 
 //Neopixel
 #define PIXEL_PIN D2
@@ -32,7 +34,6 @@ VectorFloat gravity;    // [x, y, z]            gravity vector
 float euler[3];         // [psi, theta, phi]    Euler angle container
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
-
 //CAP1188
 Adafruit_CAP1188 cap = Adafruit_CAP1188();
 bool touched[8];
@@ -44,6 +45,7 @@ void setup() {
     //WiFi.connect();
     
     //OSC
+    getPorts();
     udp.begin(inPort);    
 
     //Neopixel
@@ -55,10 +57,9 @@ void setup() {
 	Wire.begin();
     setupAccelGyro();
     
-    //delay(1000);
+    //CAP1188
     cap.begin();
-    //sensitivity values from 1 to 7
-    cap.setSensitivity(7);
+    cap.setSensitivity(7); //sensitivity values from 1 to 7
 }
 
 void loop() {
@@ -66,6 +67,30 @@ void loop() {
     processTouched(20);
     sendOscData(50);
     rainbow(20);
+}
+
+void getPorts(){
+    WiFi.macAddress(mac);
+    sniprintf(macString, 18, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    uint32_t macId = mac[2] << 24 | mac[3] << 16 | mac[4] << 8 | mac[5];
+    
+    switch (macId){
+    	case 0x84C5C1D5: inPort = 9101; outPort = 9001; break;
+    	case 0x84C694F7: inPort = 9102; outPort = 9002; break;
+    	case 0x84C6A699: inPort = 9103; outPort = 9003; break;
+    	case 0x84C69500: inPort = 9104; outPort = 9004; break;
+    	case 0x84C69557: inPort = 9105; outPort = 9005; break;
+    	case 0x84C693D2: inPort = 9106; outPort = 9006; break;
+    	case 0x84C69542: inPort = 9107; outPort = 9007; break;
+    	case 0x84C69428: inPort = 9108; outPort = 9008; break;
+    	case 0x84C691AA: inPort = 9109; outPort = 9009; break;
+    	case 0x84C69B8E: inPort = 9110; outPort = 9010; break;
+    	case 0x84C69445: inPort = 9111; outPort = 9011; break;
+    	case 0x84C69889: inPort = 9112; outPort = 9012; break;
+    	case 0x84C69448: inPort = 9113; outPort = 9013; break;
+    	case 0x84C5CA32: inPort = 9114; outPort = 9014; break;
+    	default        : inPort = 9100; outPort = 9000; break;
+    }
 }
 
 void setupAccelGyro(){
