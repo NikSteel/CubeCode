@@ -10,7 +10,6 @@
 //OSC
 UDP udp;
 IPAddress outIp(255, 255, 255, 255);
-//IPAddress multicastAddress(255,255,255,255);
 IPAddress inIp;
 char inIpString[16];  
 char macString[18];
@@ -18,6 +17,7 @@ byte mac[6];
 unsigned int outPort;
 unsigned int inPort;
 void resetPhoton(OSCMessage &inMessage);
+float rssi = -127;
 
 //Neopixel
 #define PIXEL_PIN D2
@@ -51,7 +51,6 @@ void setup() {
     //OSC
     getPorts();
     udp.begin(inPort);
-    //udp.joinMulticast(multicastAddress);
 
     //Neopixel
     strip.begin();
@@ -72,11 +71,49 @@ void setup() {
 void loop() {
     processAccelGyro(20);
     processTouched(20);
+    processRSSI(20);
     sendOscData(50);
     receiveOscData(50);
     rainbow(20);
     healthCheck(400);
 }
+
+
+void processRSSI(unsigned int wait){
+    static unsigned long previousTime = 0;
+    unsigned long currentTime = millis();
+    
+    char sigstr[10];
+    
+    if ((currentTime - previousTime) > wait){
+        previousTime = currentTime;
+        rssi = WiFi.RSSI();
+    }
+}
+/*
+void scanWifi(unsigned int wait){
+    static unsigned long previousTime = 0;
+    unsigned long currentTime = millis();
+    
+    char sigstr[10];
+    char ap1[] = "dlink";
+    char ap2[] = "2G_s8RFLchByPD88tqM";
+    
+    if ((currentTime - previousTime) > wait){
+        previousTime = currentTime;
+
+        WiFiAccessPoint aps[3];
+        int found = WiFi.scan(aps, 3);
+        for (int i=0; i<found; i++) {
+            WiFiAccessPoint& ap = aps[i];
+            if (!strcmp(ap.ssid,ap1) || !strcmp(ap.ssid,ap2)){
+                snprintf(sigstr,10,"%d",ap.rssi);
+                Particle.publish(ap.ssid,sigstr);
+            }
+        }
+        
+    }
+}*/
 
 void getLocalIp(){
     inIp = WiFi.localIP();
@@ -93,7 +130,7 @@ void resetPhoton(OSCMessage &inMessage)
     System.reset();
 }
 
-void healthCheck(int maxDelay){
+void healthCheck(unsigned int maxDelay){
     static unsigned long previousTime = 0;
     static bool firstRun = true;
     
@@ -211,6 +248,7 @@ void sendOscData(uint8_t wait){
         outMessage.addInt(touched[i]);
       }
       outMessage.addString(inIpString);
+      outMessage.addFloat(rssi);
       outMessage.send(udp,outIp,outPort);
       
       toggleLed();
