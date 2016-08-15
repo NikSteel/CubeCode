@@ -10,10 +10,14 @@
 //OSC
 UDP udp;
 IPAddress outIp(255, 255, 255, 255);
+//IPAddress multicastAddress(255,255,255,255);
+IPAddress inIp;
+char inIpString[16];  
 char macString[18];
 byte mac[6];
 unsigned int outPort;
 unsigned int inPort;
+void resetPhoton(OSCMessage &inMessage);
 
 //Neopixel
 #define PIXEL_PIN D2
@@ -46,32 +50,76 @@ void setup() {
     
     //OSC
     getPorts();
-    udp.begin(inPort);    
+    udp.begin(inPort);
+    //udp.joinMulticast(multicastAddress);
 
     //Neopixel
     strip.begin();
     strip.show(); // Initialize all pixels to 'off'
     
     //MPU6050
-    delay(1000);
+    delay(500);
 	Wire.begin();
     setupAccelGyro();
     
     //CAP1188
     cap.begin();
     cap.setSensitivity(7); //sensitivity values from 1 to 7
+    
+    getLocalIp();
 }
 
 void loop() {
     processAccelGyro(20);
     processTouched(20);
     sendOscData(50);
+    receiveOscData(50);
     rainbow(20);
+    healthCheck(400);
 }
+
+void getLocalIp(){
+    inIp = WiFi.localIP();
+    byte oct1 = inIp[0];
+    byte oct2 = inIp[1];
+    byte oct3 = inIp[2];
+    byte oct4 = inIp[3];
+    snprintf(inIpString, 16, "%d.%d.%d.%d", oct1, oct2, oct3, oct4);
+    Particle.publish("LocalIP",inIpString);
+}
+
+void resetPhoton(OSCMessage &inMessage)
+{
+    System.reset();
+}
+
+void healthCheck(int maxDelay){
+    static unsigned long previousTime = 0;
+    static bool firstRun = true;
+    
+    unsigned long currentTime = millis();
+    
+    if (firstRun){
+        previousTime = currentTime;
+        firstRun = false;
+    }
+    
+    if ((currentTime - previousTime) > maxDelay){
+      //a problem occured -- reset accelGyro
+      Particle.publish("EnteredRecovery", "True");
+      Wire.reset();
+      setupAccelGyro();
+      Particle.publish("MPUConnection",mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
+      Particle.publish("DMPStatus",(dmpReady ? "Success": "Failed"));
+    }
+    
+    previousTime = millis();
+}
+
 
 void getPorts(){
     WiFi.macAddress(mac);
-    sniprintf(macString, 18, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    snprintf(macString, 18, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     uint32_t macId = mac[2] << 24 | mac[3] << 16 | mac[4] << 8 | mac[5];
     
     switch (macId){
@@ -114,13 +162,38 @@ void setupAccelGyro(){
     
     } else {
         Serial.println((devStatus == 1) ? "DMP Initial memory load failed." : "DMP Configuration updates failed.");
+        dmpReady = false;
     }
 }
 
 
+void receiveOscData(uint8_t wait){
+    static unsigned long previousTime = 0;
+    unsigned long currentTime = millis();
+    
+    if ((currentTime - previousTime) > wait){
+        previousTime = currentTime;
+        
+        //RECEIVE
+        int size = 0;
+        OSCMessage inMessage;
+        if ( ( size = udp.parsePacket()) > 0)
+        {
+            Particle.publish("ReceivedOSC","True");
+              while (size--)
+            {
+                inMessage.fill(udp.read());
+            }
+            if( inMessage.parse())
+            {
+                inMessage.route("/reset", resetPhoton);
+            }
+        }
+    }
+}
+
 void sendOscData(uint8_t wait){
     static unsigned long previousTime = 0;
-    static bool ledState = false;
     unsigned long currentTime = millis();
     
     if ((currentTime - previousTime) > wait){
@@ -137,12 +210,12 @@ void sendOscData(uint8_t wait){
       for (uint8_t i=0; i<8; i++) {
         outMessage.addInt(touched[i]);
       }
+      outMessage.addString(inIpString);
       outMessage.send(udp,outIp,outPort);
       
       toggleLed();
     }
 }
-
 
 void sendSerialData(uint8_t wait){
     static unsigned long previousTime = 0;
