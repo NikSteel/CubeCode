@@ -5,7 +5,7 @@
 
 //General
 #define LED_PIN D7
-//SYSTEM_MODE(SEMI_AUTOMATIC);
+SYSTEM_MODE(SEMI_AUTOMATIC);
 
 //OSC
 UDP udp;
@@ -21,7 +21,7 @@ float rssi = -127;
 
 //Neopixel
 #define PIXEL_PIN D2
-#define PIXEL_COUNT 40
+#define PIXEL_COUNT 60
 #define PIXEL_TYPE WS2812B
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
 
@@ -40,16 +40,26 @@ float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gra
 
 //CAP1188
 Adafruit_CAP1188 cap = Adafruit_CAP1188();
-bool touched[8];
+//bool touched[8];
+bool touched;
+
+void getSpecificPort()
+{
+    inPort = 9102; outPort = 9002;
+}
 
 void setup() {
     //General
+    WiFi.connect();
     pinMode(LED_PIN,OUTPUT);
     Serial.begin(9600);
-    //WiFi.connect();
+    
+    while(! WiFi.ready())
+    {}
     
     //OSC
-    getPorts();
+    //getPorts();
+    getSpecificPort();
     udp.begin(inPort);
 
     //Neopixel
@@ -71,7 +81,7 @@ void setup() {
 void loop() {
     processAccelGyro(20);
     processTouched(20);
-    processRSSI(20);
+    //processRSSI(20);
     sendOscData(50);
     receiveOscData(50);
     rainbow(20);
@@ -122,7 +132,7 @@ void getLocalIp(){
     byte oct3 = inIp[2];
     byte oct4 = inIp[3];
     snprintf(inIpString, 16, "%d.%d.%d.%d", oct1, oct2, oct3, oct4);
-    Particle.publish("LocalIP",inIpString);
+    //Particle.publish("LocalIP",inIpString);
 }
 
 void resetPhoton(OSCMessage &inMessage)
@@ -143,11 +153,11 @@ void healthCheck(unsigned int maxDelay){
     
     if ((currentTime - previousTime) > maxDelay){
       //a problem occured -- reset accelGyro
-      Particle.publish("EnteredRecovery", "True");
+      //Particle.publish("EnteredRecovery", "True");
       Wire.reset();
       setupAccelGyro();
-      Particle.publish("MPUConnection",mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
-      Particle.publish("DMPStatus",(dmpReady ? "Success": "Failed"));
+      //Particle.publish("MPUConnection",mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
+      //Particle.publish("DMPStatus",(dmpReady ? "Success": "Failed"));
     }
     
     previousTime = millis();
@@ -216,7 +226,7 @@ void receiveOscData(uint8_t wait){
         OSCMessage inMessage;
         if ( ( size = udp.parsePacket()) > 0)
         {
-            Particle.publish("ReceivedOSC","True");
+            //Particle.publish("ReceivedOSC","True");
               while (size--)
             {
                 inMessage.fill(udp.read());
@@ -244,9 +254,10 @@ void sendOscData(uint8_t wait){
       outMessage.addFloat(ypr[0]);
       outMessage.addFloat(ypr[1]);
       outMessage.addFloat(ypr[2]);
-      for (uint8_t i=0; i<8; i++) {
-        outMessage.addInt(touched[i]);
-      }
+      //for (uint8_t i=0; i<8; i++) {
+        //outMessage.addInt(touched[i]);
+      //}
+      outMessage.addInt(touched);
       outMessage.addString(inIpString);
       outMessage.addFloat(rssi);
       outMessage.send(udp,outIp,outPort);
@@ -348,9 +359,10 @@ void processTouched(uint8_t wait){
     
     if ((currentTime - previousTime) > wait){
         previousTime = currentTime;
-        uint8_t raw = cap.touched();
-        for (uint8_t i=0; i<8; i++) {
-            touched[i] = (raw & (1 << i)) ? true : false;
-        }
+        //uint8_t raw = cap.touched();
+        //for (uint8_t i=0; i<8; i++) {
+        //    touched[i] = (raw & (1 << i)) ? true : false;
+        //}
+        touched = cap.touched() ? 1 : 0;
     }
 }
