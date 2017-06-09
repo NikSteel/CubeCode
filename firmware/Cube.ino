@@ -84,10 +84,51 @@ void loop() {
     //processRSSI(20);
     sendOscData(50);
     receiveOscData(50);
-    rainbow(20);
+    //rainbow(20);
+    monoColor(20);
     healthCheck(400);
+    
 }
 
+void monoColor(uint8_t wait) {
+  static uint16_t j = 0;
+  static unsigned long previousTime = 0;
+  
+  unsigned long currentTime = millis();
+  
+  if ((currentTime - previousTime) > wait){
+      previousTime = currentTime;
+      j = (j >= 255) ? 0 : j + 1;
+      
+      byte color = toInt(scaleRange(ypr[0], -180, 180, 0, 255));
+      
+      renderColor(color);
+  }
+}
+
+
+float scaleRange(float value, float inputLow, float inputHigh, float outputLow, float outputHigh)
+{
+    float result = ((value - inputLow) / (inputHigh - inputLow)) * (outputHigh - outputLow) + outputLow;
+    return result;
+}
+
+
+uint8_t toInt(float value)
+{
+    return (uint8_t) round(value) & 255;
+}
+
+void renderColor(byte color)
+{
+    uint16_t i;
+    
+    for(i=0; i<strip.numPixels(); ++i) {
+        strip.setPixelColor(i, Wheel(color & 255));
+    }
+      
+    strip.show(); 
+}
 
 void processRSSI(unsigned int wait){
     static unsigned long previousTime = 0;
