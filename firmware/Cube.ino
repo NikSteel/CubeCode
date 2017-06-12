@@ -45,7 +45,7 @@ bool touched;
 
 void getSpecificPort()
 {
-    inPort = 9102; outPort = 9002;
+    inPort = 9105; outPort = 9005;
 }
 
 void setup() {
@@ -81,27 +81,64 @@ void setup() {
 void loop() {
     processAccelGyro(20);
     processTouched(20);
-    //processRSSI(20);
     sendOscData(50);
     receiveOscData(50);
-    //rainbow(20);
-    monoColor(20);
+    animateLights();
     healthCheck(400);
+}
+
+void animateLights()
+{
+    if (isTouched(500))
+    {
+        monoColor(20);
+    }
+    else
+    {
+        rainbow(20);
+    }
+}
+
+
+bool isTouched(uint8_t wait)
+{
+    static unsigned long startTime = 0;
+    static unsigned long endTime = 0;
+    static bool wasTouched = false;
     
+    unsigned long currentTime = millis();
+    
+    if (touched && !wasTouched)
+    {
+        startTime = currentTime;
+        wasTouched = true;
+        return false;
+    }
+    if (touched && wasTouched && (currentTime - startTime) > wait)
+    {
+        return true;
+    }
+    if (!touched && wasTouched)
+    {
+        endTime = currentTime;
+        wasTouched = false;
+        return true;
+    }
+    if (!touched && !wasTouched && (currentTime - endTime) > wait)
+    {
+        return false;
+    }
+    
+    //otherwise
+    return false;
 }
 
 void monoColor(uint8_t wait) {
-  static uint16_t j = 0;
   static unsigned long previousTime = 0;
-  
   unsigned long currentTime = millis();
-  
   if ((currentTime - previousTime) > wait){
       previousTime = currentTime;
-      j = (j >= 255) ? 0 : j + 1;
-      
       byte color = toInt(scaleRange(ypr[0], -180, 180, 0, 255));
-      
       renderColor(color);
   }
 }
